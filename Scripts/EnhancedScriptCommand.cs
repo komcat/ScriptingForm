@@ -1,35 +1,14 @@
-﻿using Serilog;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using Serilog;
 
-namespace ScriptingForm.Script
+namespace ScriptingForm.Scripts
 {
     // Interfaces for missing classes
-    public interface IEziioController
-    {
-        void SetOutputByName(string name);
-        void ClearOutputByName(string name);
-    }
 
-    public interface ISlidesController
-    {
-        Task ActivateSlideAsync(string slideName);
-        Task DeactivateSlideAsync(string slideName);
-    }
-
-    public interface IGraphManager
-    {
-        Task MoveToPoint(string pointName, bool showDialog);
-    }
-
-    public interface ICountdownPopup
-    {
-        Task ShowCountdownAsync(int milliseconds);
-        Task ShowCountdownAsync(int milliseconds, Action completionCallback);
-    }
 
     // Main command class
     public class EnhancedScriptCommand
@@ -43,7 +22,7 @@ namespace ScriptingForm.Script
     // Main interpreter class
     public class EnhancedScriptInterpreter
     {
-        private readonly ILogger _logger;
+        private ILogger _logger;
         private readonly Dictionary<string, Func<EnhancedScriptCommand, Task<bool>>> _commandHandlers = new Dictionary<string, Func<EnhancedScriptCommand, Task<bool>>>();
         private readonly IEziioController _eziioControlTop;
         private readonly ISlidesController _slidesController;
