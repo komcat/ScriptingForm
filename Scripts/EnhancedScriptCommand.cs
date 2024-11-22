@@ -82,30 +82,45 @@ namespace ScriptingForm.Scripts
 
         private EnhancedScriptCommand ParseCommand(string line)
         {
-            if (string.IsNullOrWhiteSpace(line)) return null;
-
-            // Remove comments
-            var commentIndex = line.IndexOf("//");
-            if (commentIndex >= 0)
+            try
             {
-                line = line.Substring(0, commentIndex);
+                if (string.IsNullOrWhiteSpace(line)) return null;
+
+                // Remove comments
+                var commentIndex = line.IndexOf("//");
+                if (commentIndex >= 0)
+                {
+                    line = line.Substring(0, commentIndex);
+                }
+
+                line = line.Trim();
+                if (string.IsNullOrEmpty(line)) return null;
+
+                // Split by '^' and trim each part
+                var parts = line.Split(new[] { '^' }, StringSplitOptions.None)
+                               .Select(p => p.Trim())
+                               .Where(p => !string.IsNullOrEmpty(p))
+                               .ToArray();
+
+                if (parts.Length < 2)
+                {
+                    _logger.Warning($"Invalid command format (needs at least 2 parts): {line}");
+                    return null;
+                }
+
+                return new EnhancedScriptCommand
+                {
+                    Command = parts[0].Trim(),
+                    Target = parts[1].Trim(),
+                    Parameters = parts.Length > 2 ? parts.Skip(2).ToArray() : new string[0],
+                    RawCommand = line
+                };
             }
-
-            line = line.Trim();
-            if (string.IsNullOrEmpty(line)) return null;
-
-            // Split by ^ or space, depending on format
-            var parts = line.Contains("^")
-                ? line.Split(new[] { " ^ " }, StringSplitOptions.None)
-                : line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-
-            return new EnhancedScriptCommand
+            catch (Exception ex)
             {
-                Command = parts[0],
-                Target = parts.Length > 1 ? parts[1] : null,
-                Parameters = parts.Length > 2 ? parts.Skip(2).ToArray() : new string[0],
-                RawCommand = line
-            };
+                _logger.Error(ex, $"Error parsing command: {line}");
+                return null;
+            }
         }
 
         private async Task<bool> HandleSetOutput(EnhancedScriptCommand command)
@@ -169,29 +184,58 @@ namespace ScriptingForm.Scripts
         {
             try
             {
+                _logger.Information($"Processing move command: {command.RawCommand}");
+                _logger.Information($"Target: {command.Target}, Parameters: {string.Join(", ", command.Parameters)}");
+
                 var component = ParseComponent(command.Target);
-                if (component >= 0 && component < _graphManagers.Length)  // Changed to use int directly
+                _logger.Information($"Parsed component index: {component}");
+
+                if (component < 0 || component >= _graphManagers.Length)
                 {
-                    await _graphManagers[component].MoveToPoint(command.Parameters[0], false);
-                    return true;
+                    _logger.Error($"Invalid component index {component} for target: {command.Target}");
+                    return false;
                 }
-                _logger.Error($"Invalid component or point: {command.RawCommand}");
-                return false;
+
+                if (_graphManagers[component] == null)
+                {
+                    _logger.Error($"No graph manager available for component {command.Target} at index {component}");
+                    return false;
+                }
+
+                if (command.Parameters == null || command.Parameters.Length == 0)
+                {
+                    _logger.Error("No target position specified in move command");
+                    return false;
+                }
+
+                string targetPosition = command.Parameters[0];
+                _logger.Information($"Moving {command.Target} to position: {targetPosition}");
+
+                await _graphManagers[component].MoveToPoint(targetPosition, false);
+                _logger.Information($"Successfully completed move to {targetPosition}");
+                return true;
             }
             catch (Exception ex)
             {
-                _logger.Error(ex, $"Error in HandleMoveCommand: {command.RawCommand}");
+                _logger.Error(ex, $"Error executing move command: {command.RawCommand}");
                 return false;
             }
         }
-
+        
+        
         // And update the ParseComponent method to return int instead of nullable enum
         private int ParseComponent(string component)
         {
             if (string.IsNullOrEmpty(component))
+            {
+                _logger.Warning("Empty component name");
                 return -1;
+            }
 
-            switch (component.ToUpper())
+            component = component.Trim().ToUpper();
+            _logger.Information($"Parsing component: {component}");
+
+            switch (component)
             {
                 case "GANTRY":
                     return (int)uaaComponent.Gantry;
@@ -202,10 +246,10 @@ namespace ScriptingForm.Scripts
                 case "HEXAPODRIGHT":
                     return (int)uaaComponent.HexapodRight;
                 default:
+                    _logger.Warning($"Unknown component: {component}");
                     return -1;
             }
         }
-
         private async Task<bool> HandleShowDialog(EnhancedScriptCommand command)
         {
             try
