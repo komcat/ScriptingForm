@@ -9,7 +9,7 @@ using System.IO;
 using Newtonsoft.Json;
 using ScriptingForm.Dialogs;
 using ScriptingForm.UI;
-
+using ScriptingForm.Scripts;
 namespace ScriptingForm.UI
 {
     public class ScriptingControl : UserControl
@@ -35,6 +35,7 @@ namespace ScriptingForm.UI
         private readonly CountdownPopup _countdownPopup;
         private readonly Dictionary<string, Action<string[], TaskCompletionSource<bool>>> _commandExecutors;
 
+        private readonly ILaserTECController _laserController;
 
         // Command definitions
         private readonly Dictionary<string, HashSet<string>> commandTargets = new Dictionary<string, HashSet<string>>
@@ -44,7 +45,11 @@ namespace ScriptingForm.UI
             { "SLIDE", new HashSet<string> { "UV_HEAD", "DISPENSOR_HEAD", "PICK_UP_TOOL", "L_Gripper", "R_Gripper" } },
             { "MOVE", new HashSet<string> { "GANTRY", "HexapodLeft", "HexapodRight" } },
             { "SHOW_DIALOG", new HashSet<string> { "POPUPBOX" } },
-            { "SHOW_COUNTDOWN", new HashSet<string> { "N/A" } }
+            { "SHOW_COUNTDOWN", new HashSet<string> { "N/A" } },
+            { "WAIT", new HashSet<string> { "TIMER" } }, // Add new WAIT command
+            { "LASER_CURRENT", new HashSet<string> { "LASER" } },
+            { "LASER_POWER", new HashSet<string> { "LASER" } },
+            { "TEC_POWER", new HashSet<string> { "TEC" } }
         };
 
         // Target parameters
@@ -60,7 +65,10 @@ namespace ScriptingForm.UI
             { "HexapodRight", new HashSet<string> { "Home", "LensGrip", "LensPlace", "RejectLens" } },
             // ... existing parameters ...
             { "POPUPBOX", new HashSet<string> { "OK", "YES_NO" } },
-            { "N/A", new HashSet<string>() } // Will be validated separately for numeric input
+            { "N/A", new HashSet<string>() }, // Will be validated separately for numeric input
+            { "TIMER", new HashSet<string>() }, // Empty set since we'll handle validation separately
+            { "LASER", new HashSet<string> { "HIGH", "LOW", "ON", "OFF" } },
+            { "TEC", new HashSet<string> { "ON", "OFF" } }
 
         };
 
@@ -367,7 +375,22 @@ namespace ScriptingForm.UI
             string parameter = parameterListBox.SelectedItem?.ToString() ?? "";
 
             string nodeText;
-
+            if (command == "WAIT")
+            {
+                using (var millisForm = new InputDialog("Enter wait time in milliseconds (1-3600000)"))
+                {
+                    if (millisForm.ShowDialog() != DialogResult.OK) return;
+                    if (!int.TryParse(millisForm.InputText, out int millis) || millis < 1 || millis > 3600000)
+                    {
+                        MessageBox.Show("Please enter a valid number between 1 and 3600000", "Invalid Input");
+                        return;
+                    }
+                    nodeText = $"{command} ^ {target} ^ {millis}";
+                    var node2 = new TreeNode(nodeText);
+                    scriptTreeView.Nodes.Add(node2);
+                    return;  // Add this return to prevent the code below from executing
+                }
+            }
             if (command == "SHOW_DIALOG")
             {
                 using (var titleForm = new InputDialog("Enter Dialog Title"))
@@ -399,8 +422,9 @@ namespace ScriptingForm.UI
                 nodeText = $"{command} ^ {target}" + (string.IsNullOrEmpty(parameter) ? "" : $" ^ {parameter}");
             }
 
-            var node = new TreeNode(nodeText);
-            scriptTreeView.Nodes.Add(node);
+            nodeText = $"{command} ^ {target}" + (string.IsNullOrEmpty(parameter) ? "" : $" ^ {parameter}");
+            var regularNode = new TreeNode(nodeText);
+            scriptTreeView.Nodes.Add(regularNode);
         }
         private void RemoveCommandButton_Click(object sender, EventArgs e)
         {

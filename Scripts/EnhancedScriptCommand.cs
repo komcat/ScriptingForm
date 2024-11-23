@@ -34,13 +34,15 @@ namespace ScriptingForm.Scripts
         private readonly ISlidesController _slidesController;
         private readonly IGraphManager[] _graphManagers;
         private readonly ICountdownPopup _countdownPopup;
-
+        private readonly ILaserTECController _laserController;
         public EnhancedScriptInterpreter(
-        IEziioController eziioTop,
-        ISlidesController slides,
-        IGraphManager[] graphManagers,
-        ILogger logger)
+            IEziioController eziioTop,
+            ISlidesController slides,
+            IGraphManager[] graphManagers,
+            ILaserTECController laserController,  // Add this parameter
+            ILogger logger)
         {
+            _laserController = laserController;
             _logger = logger;
             _commandHandlers = new Dictionary<string, Func<EnhancedScriptCommand, CancellationToken, CancellationTokenSource, Task<bool>>>();
 
@@ -60,6 +62,10 @@ namespace ScriptingForm.Scripts
             _commandHandlers.Add("MOVE", HandleMoveCommand);
             _commandHandlers.Add("SHOW_DIALOG", HandleShowDialog);
             _commandHandlers.Add("SHOW_COUNTDOWN", HandleShowCountdown);
+            _commandHandlers.Add("WAIT", HandleWaitCommand); // Add new command handler
+            _commandHandlers.Add("LASER_CURRENT", HandleLaserCurrentCommand);
+            _commandHandlers.Add("LASER_POWER", HandleLaserPowerCommand);
+            _commandHandlers.Add("TEC_POWER", HandleTECPowerCommand);
         }
 
         public async Task<bool> ExecuteCommand(string rawCommand, CancellationToken cancellationToken, CancellationTokenSource cts)
@@ -511,6 +517,167 @@ namespace ScriptingForm.Scripts
             catch (Exception ex)
             {
                 _logger.Error(ex, $"Error in HandleShowCountdown: {command.RawCommand}");
+                return false;
+            }
+        }
+
+        // 5. Implement the WAIT command handler
+        private async Task<bool> HandleWaitCommand(
+                EnhancedScriptCommand command,
+                CancellationToken cancellationToken,
+                CancellationTokenSource cancellationTokenSource)
+        {
+            try
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    _logger.Information("Wait command cancelled before execution");
+                    return false;
+                }
+
+                // Check if Parameters array exists and has the required parameter
+                if (command.Parameters == null || command.Parameters.Length == 0)
+                {
+                    _logger.Error("Wait command missing duration parameter");
+                    return false;
+                }
+
+                if (!int.TryParse(command.Parameters[0], out int milliseconds))
+                {
+                    _logger.Error($"Invalid wait duration: {command.Parameters[0]}");
+                    return false;
+                }
+
+                _logger.Information($"Waiting for {milliseconds} milliseconds");
+
+                try
+                {
+                    await Task.Delay(milliseconds, cancellationToken);
+                    _logger.Information("Wait completed successfully");
+                    return true;
+                }
+                catch (OperationCanceledException)
+                {
+                    _logger.Information("Wait cancelled during delay");
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, $"Error in HandleWaitCommand: {command.RawCommand}");
+                return false;
+            }
+        }
+        private async Task<bool> HandleLaserCurrentCommand(
+        EnhancedScriptCommand command,
+        CancellationToken cancellationToken,
+        CancellationTokenSource cancellationTokenSource)
+        {
+            try
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    _logger.Information("Laser current command cancelled before execution");
+                    return false;
+                }
+
+                string setting = command.Parameters[0].ToUpper();
+                switch (setting)
+                {
+                    case "LOW":
+                        await _laserController.SetLowCurrent();
+                        _logger.Information("Set laser current to low");
+                        break;
+                    case "HIGH":
+                        await _laserController.SetHighCurrent();
+                        _logger.Information("Set laser current to high");
+                        break;
+                    default:
+                        _logger.Error($"Invalid laser current setting: {setting}");
+                        return false;
+                }
+
+                return !cancellationToken.IsCancellationRequested;
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, $"Error in HandleLaserCurrentCommand: {command.RawCommand}");
+                return false;
+            }
+        }
+
+        private async Task<bool> HandleLaserPowerCommand(
+            EnhancedScriptCommand command,
+            CancellationToken cancellationToken,
+            CancellationTokenSource cancellationTokenSource)
+        {
+            try
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    _logger.Information("Laser power command cancelled before execution");
+                    return false;
+                }
+
+                string power = command.Parameters[0].ToUpper();
+                switch (power)
+                {
+                    case "ON":
+                        await _laserController.TurnOnLaser();
+                        _logger.Information("Turned laser on");
+                        break;
+                    case "OFF":
+                        await _laserController.TurnOffLaser();
+                        _logger.Information("Turned laser off");
+                        break;
+                    default:
+                        _logger.Error($"Invalid laser power setting: {power}");
+                        return false;
+                }
+
+                return !cancellationToken.IsCancellationRequested;
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, $"Error in HandleLaserPowerCommand: {command.RawCommand}");
+                return false;
+            }
+        }
+
+        private async Task<bool> HandleTECPowerCommand(
+            EnhancedScriptCommand command,
+            CancellationToken cancellationToken,
+            CancellationTokenSource cancellationTokenSource)
+        {
+            try
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    _logger.Information("TEC power command cancelled before execution");
+                    return false;
+                }
+
+                string power = command.Parameters[0].ToUpper();
+                switch (power)
+                {
+                    case "ON":
+                        await _laserController.TurnOnTEC();
+                        _logger.Information("Turned TEC on");
+                        break;
+                    case "OFF":
+                        await _laserController.TurnOffTEC();
+                        _logger.Information("Turned TEC off");
+                        break;
+                    default:
+                        _logger.Error($"Invalid TEC power setting: {power}");
+                        return false;
+                }
+
+                return !cancellationToken.IsCancellationRequested;
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, $"Error in HandleTECPowerCommand: {command.RawCommand}");
                 return false;
             }
         }
