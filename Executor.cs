@@ -7,21 +7,39 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using ScriptingForm.Scripts;
 using ScriptingForm.UI;
+using Serilog;
 
 namespace ScriptingForm
 {
     public partial class Executor : Form
     {
         private ExecutorControl executorControl;
+        private readonly IRealtimeDataProvider _realtimeData;
+        private readonly ILogger _logger;
+        private readonly EnhancedScriptInterpreter _scriptInterpreter;
 
-        public Executor()
+        public Executor(IRealtimeDataProvider realtimeData, ILogger logger)
         {
+            _realtimeData = realtimeData;
+            _logger = logger;
+
             InitializeComponent();
 
             Text = "Script Executor";
 
-            executorControl = new ExecutorControl
+            // Initialize the script interpreter
+            _scriptInterpreter = new EnhancedScriptInterpreter(
+                eziioTop: null, // Initialize with your actual dependencies
+                slides: null,
+                graphManagers: null,
+                laserController: null,
+                realtimeData: _realtimeData,
+                logger: _logger
+            );
+
+            executorControl = new ExecutorControl(_scriptInterpreter)
             {
                 Dock = DockStyle.Fill
             };
@@ -38,7 +56,8 @@ namespace ScriptingForm
             Controls.Add(menuStrip);
         }
 
-        private void LoadScript_Click(object sender, EventArgs e)
+        // In Executor.cs
+        private async void LoadScript_Click(object sender, EventArgs e)
         {
             using (var openFileDialog = new OpenFileDialog
             {
@@ -55,7 +74,9 @@ namespace ScriptingForm
 
                         if (scriptData?.Commands != null)
                         {
-                            executorControl.LoadScript(scriptData.Commands);
+                            // Pass any command outputs along with the commands
+                            var commands = scriptData.Commands;
+                            executorControl.LoadScript(commands);
                         }
                     }
                     catch (Exception ex)
@@ -66,7 +87,6 @@ namespace ScriptingForm
                 }
             }
         }
-
         private class ScriptData
         {
             public string Version { get; set; }

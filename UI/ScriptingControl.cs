@@ -49,7 +49,11 @@ namespace ScriptingForm.UI
             { "WAIT", new HashSet<string> { "TIMER" } }, // Add new WAIT command
             { "LASER_CURRENT", new HashSet<string> { "LASER" } },
             { "LASER_POWER", new HashSet<string> { "LASER" } },
-            { "TEC_POWER", new HashSet<string> { "TEC" } }
+            { "TEC_POWER", new HashSet<string> { "TEC" } },
+            { "READ", new HashSet<string> {
+                "ActualSagnac", "TargetSagnac", "KeithleyCurrent",
+                "PM400_1", "PM400_2", "PICH5", "PICH6"
+            }}
         };
 
         // Target parameters

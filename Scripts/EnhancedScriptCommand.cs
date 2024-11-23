@@ -22,6 +22,7 @@ namespace ScriptingForm.Scripts
         public string Target { get; set; }
         public string[] Parameters { get; set; }
         public string RawCommand { get; set; }
+        public string Output { get; set; }
     }
 
     // Main interpreter class
@@ -35,14 +36,28 @@ namespace ScriptingForm.Scripts
         private readonly IGraphManager[] _graphManagers;
         private readonly ICountdownPopup _countdownPopup;
         private readonly ILaserTECController _laserController;
+
+        private readonly IRealtimeDataProvider _realtimeData;
+
+        private string _lastReadValue;
+
+        // Public property to access the last read value
+        public string LastReadValue
+        {
+            get { return _lastReadValue; }
+            private set { _lastReadValue = value; }
+        }
+
         public EnhancedScriptInterpreter(
             IEziioController eziioTop,
             ISlidesController slides,
             IGraphManager[] graphManagers,
             ILaserTECController laserController,  // Add this parameter
+            IRealtimeDataProvider realtimeData,  // Add this parameter
             ILogger logger)
         {
             _laserController = laserController;
+            _realtimeData = realtimeData;
             _logger = logger;
             _commandHandlers = new Dictionary<string, Func<EnhancedScriptCommand, CancellationToken, CancellationTokenSource, Task<bool>>>();
 
@@ -66,6 +81,7 @@ namespace ScriptingForm.Scripts
             _commandHandlers.Add("LASER_CURRENT", HandleLaserCurrentCommand);
             _commandHandlers.Add("LASER_POWER", HandleLaserPowerCommand);
             _commandHandlers.Add("TEC_POWER", HandleTECPowerCommand);
+            _commandHandlers.Add("READ", HandleReadCommand);
         }
 
         public async Task<bool> ExecuteCommand(string rawCommand, CancellationToken cancellationToken, CancellationTokenSource cts)
@@ -680,6 +696,77 @@ namespace ScriptingForm.Scripts
                 _logger.Error(ex, $"Error in HandleTECPowerCommand: {command.RawCommand}");
                 return false;
             }
+        }
+
+
+        private async Task<bool> HandleReadCommand(
+                EnhancedScriptCommand command,
+                CancellationToken cancellationToken,
+                CancellationTokenSource cancellationTokenSource)
+        {
+            try
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    _logger.Information("READ command cancelled before execution");
+                    return false;
+                }
+
+                string sensorName = command.Target;
+                double value = _realtimeData.GetValueByName(sensorName);
+                string unit = _realtimeData.GetUnit(sensorName);
+
+                string formattedOutput;
+                if (double.IsNaN(value))
+                {
+                    formattedOutput = "null";
+                }
+                else
+                {
+                    formattedOutput = FormatValueWithUnit(value, unit);
+                }
+
+                // Store the formatted output as the last read value
+                LastReadValue = formattedOutput;
+
+                _logger.Information($"Read sensor {sensorName}: {formattedOutput}");
+
+                return !cancellationToken.IsCancellationRequested;
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, $"Error in HandleReadCommand: {command.RawCommand}");
+                LastReadValue = "null";
+                return false;
+            }
+        }
+        private string FormatValueWithUnit(double value, string unit)
+        {
+            string formattedValue = value.ToString("F3");
+            string newUnit = unit;
+
+            if (Math.Abs(value) < 1e-9)
+            {
+                formattedValue = (value * 1e12).ToString("F3");
+                newUnit = "p" + unit;
+            }
+            else if (Math.Abs(value) < 1e-6)
+            {
+                formattedValue = (value * 1e9).ToString("F3");
+                newUnit = "n" + unit;
+            }
+            else if (Math.Abs(value) < 1e-3)
+            {
+                formattedValue = (value * 1e6).ToString("F3");
+                newUnit = "u" + unit;
+            }
+            else if (Math.Abs(value) < 1)
+            {
+                formattedValue = (value * 1e3).ToString("F3");
+                newUnit = "m" + unit;
+            }
+
+            return $"{formattedValue} {newUnit}";
         }
     }
 

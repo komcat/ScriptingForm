@@ -1,8 +1,7 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using System.Windows.Forms;
+using ScriptingForm.Scripts;
+using Serilog;
 
 namespace ScriptingForm
 {
@@ -16,7 +15,24 @@ namespace ScriptingForm
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new Executor());
+
+            // Create null logger if you don't want to use logging
+            ILogger logger = new LoggerConfiguration()
+                .CreateLogger();
+
+            // Create a dummy provider if you want to test without real data
+            var dummyProvider = new DummyRealtimeDataProvider();
+
+            Application.Run(new Executor(dummyProvider, logger));
         }
+    }
+
+    // Create a dummy provider for testing
+    public class DummyRealtimeDataProvider : IRealtimeDataProvider
+    {
+        public double GetValueByName(string inputName) => 0;
+        public double GetTargetByName(string inputName) => 0;
+        public string GetUnit(string inputName) => "V";
+        public bool HasChannel(string inputName) => true;
     }
 }

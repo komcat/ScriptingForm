@@ -1,7 +1,9 @@
-﻿using System;
+﻿using ScriptingForm.Scripts;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -17,6 +19,8 @@ namespace ScriptingForm.UI
 
         private List<CommandExecutionData> executionData = new List<CommandExecutionData>();
 
+
+        private readonly EnhancedScriptInterpreter scriptInterpreter;
         public class CommandExecutionData
         {
             public int CommandNumber { get; set; }
@@ -26,8 +30,9 @@ namespace ScriptingForm.UI
             public bool Selected { get; set; }
         }
 
-        public ExecutorControl()
+        public ExecutorControl(EnhancedScriptInterpreter interpreter)
         {
+            scriptInterpreter = interpreter ?? throw new ArgumentNullException(nameof(interpreter));
             InitializeComponents();
             SetupLayout();
             ConfigureGrid();
@@ -142,6 +147,8 @@ namespace ScriptingForm.UI
         private void ConfigureGrid()
         {
             // Configure DataGridView columns
+            commandGridView.Columns.Clear();  // Clear existing columns first
+
             commandGridView.Columns.Add(new DataGridViewCheckBoxColumn
             {
                 Name = "Selected",
@@ -153,36 +160,43 @@ namespace ScriptingForm.UI
             {
                 Name = "CommandNumber",
                 HeaderText = "#",
-                ReadOnly = true
+                ReadOnly = true,
+                Width = 50
             });
-
-
 
             commandGridView.Columns.Add(new DataGridViewTextBoxColumn
             {
                 Name = "CommandText",
                 HeaderText = "Command",
-                ReadOnly = true
-            });
-
-            commandGridView.Columns.Add(new DataGridViewTextBoxColumn
-            {
-                Name = "Output",
-                HeaderText = "Output",
-                ReadOnly = true
+                ReadOnly = true,
+                AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
             });
 
             commandGridView.Columns.Add(new DataGridViewTextBoxColumn
             {
                 Name = "ExecutionTime",
                 HeaderText = "Time",
-                ReadOnly = true
+                ReadOnly = true,
+                Width = 150
             });
 
-            // Wire up events
-            executeButton.Click += ExecuteButton_Click;
-        }
+            commandGridView.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "Output",
+                HeaderText = "Output",
+                ReadOnly = true,
+                Width = 200
+            });
 
+            // Configure grid properties
+            commandGridView.AllowUserToAddRows = false;
+            commandGridView.AllowUserToDeleteRows = false;
+            commandGridView.MultiSelect = true;
+            commandGridView.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+            commandGridView.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCells;
+            commandGridView.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
+            commandGridView.ReadOnly = true;
+        }
         public void LoadScript(string[] commands)
         {
             executionData.Clear();
@@ -241,27 +255,30 @@ namespace ScriptingForm.UI
             {
                 foreach (int rowIndex in rowIndices)
                 {
-                    // Update execution time
                     DateTime executionTime = DateTime.Now;
                     commandGridView.Rows[rowIndex].Cells["ExecutionTime"].Value = executionTime.ToString("yyyy-MM-dd HH:mm:ss");
 
-                    // Get command
                     string command = commandGridView.Rows[rowIndex].Cells["CommandText"].Value.ToString();
+                    string output = await ExecuteCommand(command);
 
-                    // TODO: Implement actual command execution here
-                    // For now, just simulate execution with a delay
-                    await Task.Delay(1000);
-                    string output = $"Executed command {rowIndex + 1}";
-
-                    // Update output
-                    commandGridView.Rows[rowIndex].Cells["Output"].Value = output;
+                    // Update output immediately
+                    if (commandGridView.InvokeRequired)
+                    {
+                        commandGridView.Invoke((MethodInvoker)delegate
+                        {
+                            commandGridView.Rows[rowIndex].Cells["Output"].Value = output;
+                            commandGridView.Refresh();
+                        });
+                    }
+                    else
+                    {
+                        commandGridView.Rows[rowIndex].Cells["Output"].Value = output;
+                        commandGridView.Refresh();
+                    }
 
                     // Update data model
                     executionData[rowIndex].ExecutionTime = executionTime;
                     executionData[rowIndex].Output = output;
-
-                    // Refresh display
-                    commandGridView.Refresh();
                 }
             }
             finally
@@ -269,8 +286,51 @@ namespace ScriptingForm.UI
                 executeButton.Enabled = true;
             }
         }
+        private async Task<string> ExecuteCommand(string command)
+        {
+            try
+            {
+                // Create a task completion source to wait for the command result
+                var tcs = new TaskCompletionSource<string>();
 
-        // Method to get execution results
+                // Execute the command with a cancellation token
+                var cts = new CancellationTokenSource();
+
+                // Parse the command
+                string[] parts = command.Split(new[] { " ^ " }, StringSplitOptions.None);
+                string commandType = parts[0];
+
+                // Execute the command and get its output
+                var scriptCommand = new EnhancedScriptCommand
+                {
+                    Command = parts[0],
+                    Target = parts.Length > 1 ? parts[1] : "",
+                    Parameters = parts.Length > 2 ? parts.Skip(2).ToArray() : new string[0],
+                    RawCommand = command
+                };
+
+                // Execute the command through the interpreter
+                await scriptInterpreter.ExecuteCommand(command, cts.Token, cts);
+
+                // Return the output based on command type
+                if (commandType == "READ")
+                {
+                    return scriptCommand.Output ?? "null";
+                }
+                else if (commandType == "WAIT")
+                {
+                    return $"Waited {parts[2]} ms";
+                }
+                else
+                {
+                    return $"Command executed successfully";
+                }
+            }
+            catch (Exception ex)
+            {
+                return $"Error: {ex.Message}";
+            }
+        }        // Method to get execution results
         public List<CommandExecutionData> GetExecutionResults()
         {
             return executionData.ToList();
